@@ -360,6 +360,11 @@ TABS.sensors.initialize = function (callback) {
             // timer initialization
             GUI.interval_kill_all(['status_pull']);
 
+            GUI.interval_add('ckas_pull', function imu_data_pull() {
+                MSP.send_message(MSPCodes.MSP_ATTITUDE, false, false);
+                MSP.send_message(MSPCodes.MSP_RAW_IMU, false, false, send_ckas_data);
+            }, fastest, true);
+
             // data pulling timers
             if (checkboxes[0] || checkboxes[1] || checkboxes[2]) {
                 GUI.interval_add('IMU_pull', function imu_data_pull() {
@@ -383,6 +388,57 @@ TABS.sensors.initialize = function (callback) {
                 GUI.interval_add('debug_pull', function debug_data_pull() {
                     MSP.send_message(MSPCodes.MSP_DEBUG, false, false, update_debug_graphs);
                 }, rates.debug, true);
+            }
+
+            function send_ckas_data() {
+                /*
+                 ~M[ <x> <y> <z> <yaw> <pitch> <roll>[ <axi> <ayi> <azi> <axg>
+                 <ayg> <azg> <ωz> <ωy> <ωx>]]
+
+                 <x> <y> <z> : float: manual platform translation, mm (forward, right, down of neutral).
+                 <yaw> <pitch> <roll> : float: manual platform rotation, degrees (Euler angles; rotation about axes Z, Y, X respectively in that order).
+                 <axi> <ayi> <azi> : float: inertial acceleration (without gravity) in body axes, m/s².
+                 <axg> <ayg> <azg> : float: projection of gravity acceleration on body axes, m/s².
+                 <ωz> <ωy> <ωx> : float: yaw, pitch and roll body angular velocity, rad/s.
+
+                 # Report current position:
+                 ~M
+                 # Move 2.1 mm down and pitch nose up 3.5°:
+                 ~M 0 0 2.1 0 3.5 0
+                 # Simulate acceleration forward with 0.1g:
+                 ~M 0 0 0 0 0 0 0.98 0 0 0 0 9.8 0 0 0
+
+                 25 : "heading[0]" (deg) (value / Math.PI * 180).toFixed(2) (or just take raw for rad/s)
+                 26 : "heading[1]"
+                 27 : "heading[2]"
+
+                 18 : "accSmooth[0]" (g) flightLog.accRawToGs(value).toFixed(4) * 9.8
+                 19 : "accSmooth[1]"
+                 20 : "accSmooth[2]"
+
+                 15 : "gyroADC[0]" (deg/s) Math.round(flightLog.gyroRawToDegreesPerSecond(value))
+                 16 : "gyroADC[1]"
+                 17 : "gyroADC[2]"
+
+                 SENSOR_DATA.accelerometer;
+                 SENSOR_DATA.gyroscope;
+
+                 */
+
+                var tableCommand = "~M 0 0 0"
+                    + " " + (SENSOR_DATA.kinematics[2])
+                    + " " + (SENSOR_DATA.kinematics[1])
+                    + " " + (SENSOR_DATA.kinematics[0])
+                    + " 0 0 0"
+                    + " " + (SENSOR_DATA.accelerometer[2]).toFixed(4) // flightLog.accRawToGs(frame[18]) * 9.8).toFixed(4)
+                    + " " + (SENSOR_DATA.accelerometer[1]).toFixed(4) // flightLog.accRawToGs(frame[18]) * 9.8).toFixed(4)
+                    + " " + (SENSOR_DATA.accelerometer[0]).toFixed(4) // flightLog.accRawToGs(frame[18]) * 9.8).toFixed(4)
+                    + " " + (SENSOR_DATA.gyroscope[2]).toFixed(4) // flightLog.gyroRawToRadiansPerSecond(frame[17]).toFixed(4)
+                    + " " + (SENSOR_DATA.gyroscope[1]).toFixed(4) // flightLog.gyroRawToRadiansPerSecond(frame[17]).toFixed(4)
+                    + " " + (SENSOR_DATA.gyroscope[0]).toFixed(4) // flightLog.gyroRawToRadiansPerSecond(frame[17]).toFixed(4)
+                    + "\n";
+                table_connection.send(tableCommand);
+                GUI.log(tableCommand);
             }
 
             function update_imu_graphs() {
